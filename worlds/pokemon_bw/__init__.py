@@ -1,7 +1,7 @@
 import datetime
 import logging
 import os
-from typing import ClassVar, Mapping, Any, List, TextIO
+from typing import ClassVar, Mapping, Any, List, Union
 
 import settings
 from BaseClasses import MultiWorld, Tutorial, Item, Location, Region
@@ -10,8 +10,14 @@ from worlds.AutoWorld import World, WebWorld
 from . import items, locations, options, bizhawk_client, rom, groups, tracker
 from .generate import EncounterEntry, StaticEncounterEntry, TradeEncounterEntry, TrainerPokemonEntry
 from .data import RulesDict
+from settings import FilePath
 
 bizhawk_client.register_client()
+
+
+class UTPackPath(FilePath):
+    required = False
+    ut_dialog_name = "Select PopTracker pack"
 
 
 class PokemonBWSettings(settings.Group):
@@ -42,17 +48,13 @@ class PokemonBWSettings(settings.Group):
         """If enabled, the arm7 code file inside the rom gets expanded with dummy code. This is purely for testing
         purposes and will be deprecated later."""
 
-    class ExtractText(settings.Bool):
-        """If enabled, running a patch file for this game will also produce a text file
-        containing all ingame text alongside the rom."""
-
     black_rom: PokemonBlackRomFile = PokemonBlackRomFile(PokemonBlackRomFile.copy_to)
     white_rom: PokemonWhiteRomFile = PokemonWhiteRomFile(PokemonWhiteRomFile.copy_to)
+    ut_pack_path: Union[UTPackPath, str] = UTPackPath()
     # remove_collected_field_items: RemoveCollectedFieldItems | bool = False
     enable_encounter_plando: EnableEncounterPlando | bool = True
     dump_patched_files: DumpPatchedFiles | bool = False
     enable_arm7_expansion_test: EnableArm7ExpansionTest | bool = False
-    extract_text: ExtractText | bool = False
 
 
 class PokemonBWWeb(WebWorld):
@@ -92,17 +94,17 @@ class PokemonBWWorld(World):
     location_name_groups = groups.get_location_groups()
 
     ut_can_gen_without_yaml = True
-    glitches_item_name = "Out of logic"
     tracker_world = {
         "map_page_folder": "tracker",
+        "external_pack_key": "ut_pack_path",
         "map_page_maps": "maps/maps.json",
-        "map_page_locations": {
+        "map_page_locations": [
             "locations/locations.json",
             "locations/submaps_cities.json",
             "locations/submaps_dungeons.json",
             "locations/submaps_routes.json",
             "locations/old_compat.json",
-        },
+        ],
         "map_page_index": tracker.map_page_index,
         "map_page_setting_key": "pokemon_bw_map_{team}_{player}",
     }
@@ -236,11 +238,6 @@ class PokemonBWWorld(World):
         hint_data[self.player] = {}
         locations.extend_species_hints(self, hint_data)
 
-    def write_spoiler(self, spoiler_handle: TextIO) -> None:
-        from .generate.spoiler import write_spoiler_encounter, write_spoiler_trainer
-        write_spoiler_encounter(self, spoiler_handle)
-        write_spoiler_trainer(self, spoiler_handle)
-
     def generate_output(self, output_directory: str) -> None:
         if self.options.version == "black":
             rom.PokemonBlackPatch(
@@ -274,22 +271,19 @@ class PokemonBWWorld(World):
                 "dexsanity": self.options.dexsanity.value,
                 "season_control": self.options.season_control.current_key,
                 "adjust_levels": self.options.adjust_levels.value,
-                "modify_levels": self.options.modify_levels.value,
                 "modify_encounter_rates": self.options.modify_encounter_rates.value,  # value property because of plando
                 "exp_multiplier": self.options.exp_multiplier.value,
                 "all_pokemon_seen": self.options.all_pokemon_seen.value,
                 "master_ball_seller": self.options.master_ball_seller.value,
                 "modify_item_pool": self.options.modify_item_pool.value,
                 "modify_logic": self.options.modify_logic.value,
-                "funny_dialog": self.options.funny_dialog.current_key,
-                "text_plando": self.options.text_plando.to_slot_data(),
-                "reusable_tms": self.options.reusable_tms.current_key,
             },
             # Needed for UT
             "seed": self.seed,
             "ut_compatibility": version.ut(),
             # NOT needed for UT
             "master_ball_seller_cost": self.master_ball_seller_cost,
+            "reusable_tms": self.options.reusable_tms.current_key,
             # Needed for PopTracker
             "encounter_by_method": self.encounter_by_method,
             "trade_data": self.trade_data,
